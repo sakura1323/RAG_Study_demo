@@ -1,0 +1,227 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>知问 · 本地知识库</title>
+  <script src="https://cdn.tailwindcss.com"></script>
+  <style>
+    :root { color-scheme: light; }
+    body { background: radial-gradient(circle at 10% 0%, #e0f2fe 0, transparent 34%), #f8fafc; }
+    .scrollbar::-webkit-scrollbar { width: 6px; }
+    .scrollbar::-webkit-scrollbar-thumb { background: #cbd5e1; border-radius: 999px; }
+    .dot { animation: pulse 1.1s infinite ease-in-out; }
+    .dot:nth-child(2) { animation-delay: .15s; }
+    .dot:nth-child(3) { animation-delay: .3s; }
+    @keyframes pulse { 0%, 80%, 100% { opacity: .25; transform: translateY(0); } 40% { opacity: 1; transform: translateY(-3px); } }
+  </style>
+</head>
+<body class="min-h-screen text-slate-800 antialiased">
+  <header class="border-b border-slate-200/80 bg-white/80 backdrop-blur">
+    <div class="mx-auto flex max-w-7xl items-center justify-between px-4 py-4 sm:px-6">
+      <div class="flex items-center gap-3">
+        <div class="grid h-10 w-10 place-items-center rounded-xl bg-sky-600 text-xl text-white shadow-sm">知</div>
+        <div><h1 class="text-lg font-bold tracking-tight">知问 · 本地知识库</h1><p class="text-xs text-slate-500">上传文档，然后向你的资料提问</p></div>
+      </div>
+      <div class="flex items-center gap-2 rounded-full border border-emerald-200 bg-emerald-50 px-3 py-1.5 text-xs font-medium text-emerald-700">
+        <span id="statusDot" class="h-2 w-2 rounded-full bg-emerald-500"></span><span id="statusText">服务就绪</span>
+      </div>
+    </div>
+  </header>
+
+  <main class="mx-auto grid max-w-7xl gap-5 px-4 py-6 sm:px-6 lg:grid-cols-[340px_1fr]">
+    <aside class="space-y-5" aria-label="知识库管理">
+      <section class="rounded-2xl border border-slate-200 bg-white p-5 shadow-sm">
+        <div class="mb-4"><h2 class="font-semibold">添加 PDF</h2><p class="mt-1 text-sm text-slate-500">文档会被解析并加入知识库</p></div>
+        <form id="uploadForm" class="space-y-3">
+          <label id="dropZone" for="fileInput" class="flex cursor-pointer flex-col items-center rounded-xl border-2 border-dashed border-slate-300 px-4 py-7 text-center transition hover:border-sky-400 hover:bg-sky-50/60">
+            <svg class="mb-2 h-8 w-8 text-sky-600" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="1.8" d="M7 16a4 4 0 01-.9-7.9A5 5 0 0115.8 6H16a4 4 0 010 8h-1m-3-5v10m0-10-3 3m3-3 3 3"/></svg>
+            <span id="fileLabel" class="text-sm font-medium">点击或拖入 PDF 文件</span><span class="mt-1 text-xs text-slate-400">仅支持 .pdf</span>
+            <input id="fileInput" name="file" type="file" accept="application/pdf,.pdf" class="sr-only">
+          </label>
+          <button id="uploadBtn" class="w-full rounded-xl bg-sky-600 px-4 py-2.5 text-sm font-semibold text-white shadow-sm transition hover:bg-sky-700 disabled:cursor-not-allowed disabled:opacity-50">上传并解析</button>
+        </form>
+        <p id="uploadMessage" class="mt-3 hidden rounded-lg px-3 py-2 text-sm" role="status"></p>
+      </section>
+
+      <section class="rounded-2xl border border-slate-200 bg-white shadow-sm">
+        <div class="flex items-center justify-between border-b border-slate-100 px-5 py-4">
+          <div><h2 class="font-semibold">我的文档</h2><p id="docCount" class="text-xs text-slate-400">正在加载…</p></div>
+          <button id="refreshBtn" class="rounded-lg border border-slate-200 px-3 py-1.5 text-xs font-medium hover:bg-slate-50">刷新</button>
+        </div>
+        <ul id="documentList" class="scrollbar max-h-80 divide-y divide-slate-100 overflow-y-auto" aria-live="polite"></ul>
+      </section>
+    </aside>
+
+    <section class="flex min-h-[620px] flex-col overflow-hidden rounded-2xl border border-slate-200 bg-white shadow-sm" aria-label="智能问答">
+      <header class="flex items-center justify-between border-b border-slate-100 px-5 py-4">
+        <div><h2 class="font-semibold">智能问答</h2><p class="text-xs text-slate-500">答案仅根据已上传资料生成</p></div>
+        <label class="flex items-center gap-2 text-xs text-slate-500">引用数量 <select id="topK" class="rounded-lg border border-slate-200 bg-white px-2 py-1.5"><option>3</option><option selected>5</option><option>8</option><option>10</option></select></label>
+      </header>
+      <div id="chatMessages" class="scrollbar flex-1 space-y-5 overflow-y-auto p-5 sm:p-7" aria-live="polite">
+        <div class="mx-auto max-w-lg py-16 text-center" id="welcome">
+          <div class="mx-auto mb-4 grid h-14 w-14 place-items-center rounded-2xl bg-sky-50 text-2xl">✦</div>
+          <h3 class="font-semibold">从你的资料中寻找答案</h3><p class="mt-2 text-sm leading-6 text-slate-500">先在左侧上传 PDF，然后输入问题。回答完成后会显示引用来源。</p>
+        </div>
+      </div>
+      <form id="chatForm" class="border-t border-slate-100 bg-slate-50/70 p-4 sm:p-5">
+        <div class="flex items-end gap-3 rounded-2xl border border-slate-200 bg-white p-2 shadow-sm focus-within:border-sky-400 focus-within:ring-2 focus-within:ring-sky-100">
+          <label for="questionInput" class="sr-only">输入问题</label>
+          <textarea id="questionInput" rows="1" maxlength="1000" placeholder="例如：这份资料的核心结论是什么？" class="max-h-36 min-h-[44px] flex-1 resize-none border-0 px-3 py-2.5 text-sm outline-none"></textarea>
+          <button id="sendBtn" class="grid h-10 w-10 shrink-0 place-items-center rounded-xl bg-sky-600 text-white transition hover:bg-sky-700 disabled:cursor-not-allowed disabled:opacity-50" aria-label="发送问题">
+            <svg class="h-5 w-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M5 12h14m-6-6 6 6-6 6"/></svg>
+          </button>
+        </div>
+        <p class="mt-2 text-center text-[11px] text-slate-400">Enter 发送 · Shift + Enter 换行</p>
+      </form>
+    </section>
+  </main>
+
+  <script>
+    // 前端和后端分别运行，所以请求需要写后端的完整地址。
+    const API_BASE_URL = 'http://127.0.0.1:8000';
+    const $ = (selector) => document.querySelector(selector);
+    const state = { busy: false };
+
+    function setStatus(text, ok = true) {
+      $('#statusText').textContent = text;
+      $('#statusDot').className = `h-2 w-2 rounded-full ${ok ? 'bg-emerald-500' : 'bg-rose-500'}`;
+    }
+
+    function showUploadMessage(text, type = 'ok') {
+      const box = $('#uploadMessage');
+      box.textContent = text;
+      box.className = `mt-3 rounded-lg px-3 py-2 text-sm ${type === 'ok' ? 'bg-emerald-50 text-emerald-700' : 'bg-rose-50 text-rose-700'}`;
+    }
+
+    async function request(url, options = {}) {
+      const response = await fetch(`${API_BASE_URL}${url}`, options);
+      if (!response.ok) {
+        let detail = '';
+        try { const data = await response.json(); detail = data.detail || data.message || ''; } catch { detail = await response.text(); }
+        throw new Error(detail || `请求失败（HTTP ${response.status}）`);
+      }
+      return response;
+    }
+
+    // 兼容数组和 {documents: []} 两种常见返回结构。
+    async function loadDocuments() {
+      $('#documentList').innerHTML = '<li class="px-5 py-8 text-center text-sm text-slate-400">正在加载…</li>';
+      try {
+        const data = await (await request('/documents')).json();
+        const docs = Array.isArray(data) ? data : (data.documents || data.items || []);
+        $('#docCount').textContent = `共 ${docs.length} 份文档`;
+        if (!docs.length) {
+          $('#documentList').innerHTML = '<li class="px-5 py-9 text-center text-sm text-slate-400">还没有文档，上传一份试试</li>';
+          return;
+        }
+        $('#documentList').innerHTML = '';
+        docs.forEach((doc) => {
+          const id = doc.id ?? doc.document_id ?? doc.filename ?? doc.name;
+          const name = doc.filename || doc.name || doc.title || `文档 ${id}`;
+          const li = document.createElement('li');
+          li.className = 'flex items-center gap-3 px-5 py-3.5';
+          const icon = document.createElement('span'); icon.className = 'grid h-9 w-9 shrink-0 place-items-center rounded-lg bg-rose-50 text-xs font-bold text-rose-600'; icon.textContent = 'PDF';
+          const info = document.createElement('div'); info.className = 'min-w-0 flex-1';
+          const title = document.createElement('p'); title.className = 'truncate text-sm font-medium'; title.textContent = name;
+          const meta = document.createElement('p'); meta.className = 'mt-0.5 text-xs text-slate-400'; meta.textContent = doc.chunks ? `${doc.chunks} 个文本片段` : '已加入知识库';
+          const del = document.createElement('button'); del.className = 'rounded-lg p-2 text-slate-400 hover:bg-rose-50 hover:text-rose-600'; del.setAttribute('aria-label', `删除 ${name}`); del.textContent = '删除';
+          del.addEventListener('click', () => deleteDocument(id, name));
+          info.append(title, meta); li.append(icon, info, del); $('#documentList').append(li);
+        });
+        setStatus('服务就绪', true);
+      } catch (error) {
+        $('#docCount').textContent = '加载失败';
+        $('#documentList').innerHTML = `<li class="px-5 py-8 text-center text-sm text-rose-600">${escapeHtml(error.message)}</li>`;
+        setStatus('服务连接失败', false);
+      }
+    }
+
+    async function deleteDocument(id, name) {
+      if (!confirm(`确定删除“${name}”吗？删除后将无法用于问答。`)) return;
+      try { await request(`/documents/${encodeURIComponent(id)}`, { method: 'DELETE' }); await loadDocuments(); }
+      catch (error) { alert(`删除失败：${error.message}`); }
+    }
+
+    $('#uploadForm').addEventListener('submit', async (event) => {
+      event.preventDefault();
+      const file = $('#fileInput').files[0];
+      if (!file) return showUploadMessage('请先选择一个 PDF 文件。', 'error');
+      if (!file.name.toLowerCase().endsWith('.pdf')) return showUploadMessage('文件格式不正确，请选择 PDF。', 'error');
+      const button = $('#uploadBtn'); button.disabled = true; button.textContent = '正在上传并解析…';
+      try {
+        const body = new FormData(); body.append('file', file);
+        await request('/upload', { method: 'POST', body });
+        showUploadMessage('上传成功，文档已加入知识库。');
+        $('#uploadForm').reset(); $('#fileLabel').textContent = '点击或拖入 PDF 文件';
+        await loadDocuments();
+      } catch (error) { showUploadMessage(`上传失败：${error.message}`, 'error'); }
+      finally { button.disabled = false; button.textContent = '上传并解析'; }
+    });
+
+    $('#fileInput').addEventListener('change', (event) => { $('#fileLabel').textContent = event.target.files[0]?.name || '点击或拖入 PDF 文件'; });
+    ['dragenter', 'dragover'].forEach(type => $('#dropZone').addEventListener(type, e => { e.preventDefault(); $('#dropZone').classList.add('border-sky-500', 'bg-sky-50'); }));
+    ['dragleave', 'drop'].forEach(type => $('#dropZone').addEventListener(type, e => { e.preventDefault(); $('#dropZone').classList.remove('border-sky-500', 'bg-sky-50'); }));
+    $('#dropZone').addEventListener('drop', e => { const file = e.dataTransfer.files[0]; if (file) { const dt = new DataTransfer(); dt.items.add(file); $('#fileInput').files = dt.files; $('#fileLabel').textContent = file.name; } });
+    $('#refreshBtn').addEventListener('click', loadDocuments);
+
+    function escapeHtml(value = '') { const el = document.createElement('div'); el.textContent = String(value); return el.innerHTML; }
+
+    function addMessage(role, text = '') {
+      $('#welcome')?.remove();
+      const wrap = document.createElement('article');
+      wrap.className = role === 'user' ? 'ml-auto max-w-[85%]' : 'max-w-[90%]';
+      const label = document.createElement('p'); label.className = 'mb-1.5 text-xs font-medium text-slate-400'; label.textContent = role === 'user' ? '你' : '知识库助手';
+      const bubble = document.createElement('div'); bubble.className = role === 'user' ? 'whitespace-pre-wrap rounded-2xl rounded-tr-sm bg-sky-600 px-4 py-3 text-sm leading-6 text-white' : 'whitespace-pre-wrap rounded-2xl rounded-tl-sm bg-slate-100 px-4 py-3 text-sm leading-6 text-slate-700'; bubble.textContent = text;
+      wrap.append(label, bubble); $('#chatMessages').append(wrap); $('#chatMessages').scrollTop = $('#chatMessages').scrollHeight;
+      return { wrap, bubble };
+    }
+
+    function appendSources(container, sources) {
+      if (!sources?.length) return;
+      const box = document.createElement('div'); box.className = 'mt-3 border-t border-slate-200 pt-3';
+      const title = document.createElement('p'); title.className = 'mb-2 text-xs font-semibold uppercase tracking-wide text-slate-500'; title.textContent = '参考来源'; box.append(title);
+      sources.forEach((source, index) => { const item = document.createElement('p'); item.className = 'mb-1 rounded-lg bg-white px-3 py-2 text-xs text-slate-500'; item.textContent = `${index + 1}. ${source.filename || source.document || source.source || source.title || source.content || '知识库文档'}`; box.append(item); });
+      container.append(box);
+    }
+
+    async function askQuestion(question) {
+      if (state.busy) return;
+      state.busy = true; $('#sendBtn').disabled = true; addMessage('user', question);
+      const answer = addMessage('assistant', '');
+      answer.bubble.innerHTML = '<span class="dot">●</span> <span class="dot">●</span> <span class="dot">●</span>';
+      try {
+        const payload = { question, k: Number($('#topK').value) };
+        const streamResponse = await request('/rag/stream', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(payload) });
+        if (!streamResponse.body) throw new Error('浏览器不支持流式响应。');
+        answer.bubble.textContent = '';
+        const reader = streamResponse.body.getReader(); const decoder = new TextDecoder();
+        while (true) {
+          const { value, done } = await reader.read();
+          if (done) break;
+          answer.bubble.textContent += decoder.decode(value, { stream: true });
+          $('#chatMessages').scrollTop = $('#chatMessages').scrollHeight;
+        }
+        if (!answer.bubble.textContent.trim()) answer.bubble.textContent = '未获取到回答，请换一种问法再试。';
+
+        // 流式回答完成后只做向量检索来补充来源，避免再次调用 DeepSeek。
+        try {
+          const data = await (await request('/search', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(payload) })).json();
+          appendSources(answer.bubble, data.results || []);
+        } catch (sourceError) {
+          const note = document.createElement('p'); note.className = 'mt-3 border-t border-slate-200 pt-2 text-xs text-amber-600'; note.textContent = `回答已完成，但来源加载失败：${sourceError.message}`; answer.bubble.append(note);
+        }
+      } catch (error) {
+        answer.bubble.textContent = `提问失败：${error.message}`; answer.bubble.classList.add('text-rose-600', 'bg-rose-50'); setStatus('请求失败', false);
+      } finally { state.busy = false; $('#sendBtn').disabled = false; $('#questionInput').focus(); }
+    }
+
+    $('#chatForm').addEventListener('submit', event => { event.preventDefault(); const input = $('#questionInput'); const question = input.value.trim(); if (!question) return; input.value = ''; input.style.height = 'auto'; askQuestion(question); });
+    $('#questionInput').addEventListener('keydown', event => { if (event.key === 'Enter' && !event.shiftKey) { event.preventDefault(); $('#chatForm').requestSubmit(); } });
+    $('#questionInput').addEventListener('input', event => { event.target.style.height = 'auto'; event.target.style.height = `${Math.min(event.target.scrollHeight, 144)}px`; });
+
+    loadDocuments();
+  </script>
+</body>
+</html>
+
